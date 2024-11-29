@@ -1,22 +1,7 @@
 import axios from "axios";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { NextResponse } from "next/server";
-
-// API Keys Array
-const apiKeys = [
-    process.env.NEXT_RAPID_API_1,
-    process.env.NEXT_RAPID_API_2,
-    process.env.NEXT_RAPID_API_3,
-    process.env.NEXT_RAPID_API_4,
-];
-
-// Simulate Request Tracking (you can use a more advanced tracking system here)
-let apiKeyRequestCounts = {
-    [process.env.NEXT_RAPID_API_1 as string]: { monthly: 0, hourly: 0 },
-    [process.env.NEXT_RAPID_API_2 as string]: { monthly: 0, hourly: 0 },
-    [process.env.NEXT_RAPID_API_3 as string]: { monthly: 0, hourly: 0 },
-    [process.env.NEXT_RAPID_API_4 as string]: { monthly: 0, hourly: 0 },
-};
+import Replicate from "replicate";
 
 // S3 configuration for uploading to Sufy
 const s3 = new S3Client({
@@ -27,65 +12,6 @@ const s3 = new S3Client({
         secretAccessKey: process.env.NEXT_SUFY_SK as string,
     },
 });
-
-// Function to handle making the API request
-const makeRequest = async (apiKey: string, text: string) => {
-    const url = 'https://ai-text-to-image-generator-api.p.rapidapi.com/realistic'; // Update to correct endpoint if needed
-
-    const options = {
-        method: 'POST',
-        url: url,
-        headers: {
-            'x-rapidapi-key': apiKey,
-            'x-rapidapi-host': 'ai-text-to-image-generator-api.p.rapidapi.com',
-            'Content-Type': 'application/json',
-        },
-        data: {
-            inputs: text,
-        },
-    };
-
-    try {
-        const response = await axios.request(options); // Make the API request
-        // Update request counts on success
-        apiKeyRequestCounts[apiKey as string].hourly += 1;
-        apiKeyRequestCounts[apiKey as string].monthly += 1;
-        return response.data.url; // Return the response data
-    } catch (error: any) {
-        if (error.response && error.response.status === 429) {
-            console.error(`API Key ${apiKey} is rate-limited. Switching to the next one.`);
-            return null; // Return null to trigger key rotation
-        } else {
-            console.error(`Error with API Key ${apiKey}: ${error.message}`);
-            return null; // Return null for other errors to try with a new key
-        }
-    }
-};
-
-// Function to rotate through API keys until one succeeds
-const generateImageWithKeyRotation = async (text: string) => {
-    for (let i = 0; i < apiKeys.length; i++) {
-        const apiKey = apiKeys[i];
-
-        // Check if the API key has exceeded its monthly or hourly limit
-        if (
-            apiKeyRequestCounts[apiKey as string].monthly >= 20 ||
-            apiKeyRequestCounts[apiKey as string].hourly >= 1000
-        ) {
-            console.log(`API Key ${apiKey} has exceeded its limit. Skipping.`);
-            continue; // Skip this key if it's out of quota
-        }
-
-        // Make the API request and return the result if successful
-        const result = await makeRequest(apiKey as string, text);
-        if (result) {
-            return result; // If request is successful, return the image result
-        }
-    }
-
-    // If no API keys are available (all limits exceeded or errors), return an error
-    return { error: "Error creating the image, please try later." };
-};
 
 // Function to upload the image to Sufy S3
 const uploadImageToSufy = async (imageUrl: string, fileName: string) => {
@@ -114,19 +40,43 @@ const uploadImageToSufy = async (imageUrl: string, fileName: string) => {
 };
 
 export async function POST(req: Request) {
-    const { text } = await req.json(); // Get the text prompt from the client request
+    const { prompt } = await req.json(); // Get the text prompt from the client request
 
-    // Attempt to generate image with key rotation
-    const result = await generateImageWithKeyRotation(text);
+    const replicate = new Replicate({
+        auth: process.env.REPLICATE_API_TOKEN
+    });
 
-    if (result.error) {
-        return NextResponse.json({ error: result.error }, { status: 500 });
+    const input = {
+        prompt,
+        height: 1280,
+        width: 1024,
+        num_outputs: 1
+    };
+
+    let output;
+
+    try {
+        // Cast the result to string[] (array of strings), adjust this type if needed based on actual output structure
+        output = await replicate.run(
+            "bytedance/sdxl-lightning-4step:5599ed30703defd1d160a25a63321b4dec97101d98b4674bcc56e41f62f35637", 
+            { input }
+        ) as string[];  // Force TypeScript to treat it as an array of strings
+    } catch (error) {
+        console.error("Error running Replicate model:", error);
+        throw new Error("Error generating image");
     }
 
-    // Convert image and upload it to Sufy
-    const base64 = 'data:image/png;base64,' + await convertImage(result);
+    // Check if output is actually an array before accessing it
+    if (!Array.isArray(output) || output.length === 0) {
+        throw new Error("Replicate output is not a valid array");
+    }
+
+    // Now that we know output is an array, safely access the first item
+    const imageUrl = output[0]; // Assume output[0] is a valid image URL
+
+    const base64 = 'data:image/png;base64,' + await convertImage(imageUrl);
     const fileName = `images/${Date.now()}.png`; // Unique file name using timestamp
-    const uploadedImageUrl = await uploadImageToSufy(result, fileName);
+    const uploadedImageUrl = await uploadImageToSufy(base64, fileName);
 
     // Return the uploaded image URL
     return NextResponse.json({ imageUrl: uploadedImageUrl });

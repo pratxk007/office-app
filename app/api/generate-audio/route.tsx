@@ -1,8 +1,9 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import axios from 'axios';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { NextResponse } from 'next/server';
 
-const API_KEY = 'sk_a23df200f4e35538877fa107fc865244a8b03458fd773399';
+const API_KEY = process.env.NEXT_11labs_API_KEY as string;
 const endpoint = 'https://api.elevenlabs.io/v1/text-to-speech/onwK4e9ZLuTAKqWW03F9';
 
 // S3 configuration for uploading to Sufy

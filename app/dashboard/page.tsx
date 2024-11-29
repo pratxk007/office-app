@@ -5,6 +5,7 @@ import EmptyState from './_components/EmptyState'
 import Link from 'next/link'
 
 function Dashboard() {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [videoList, setVideoList] = useState([])
   return (
     <>
