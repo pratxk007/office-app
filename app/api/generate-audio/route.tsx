@@ -31,6 +31,8 @@ export async function POST(req: Request) {
       },
     };
 
+    console.log("Sending request to Eleven Labs API with body:", requestBody);
+
     // Call Eleven Labs API to generate speech
     const response = await axios.post(endpoint, requestBody, {
       headers: {
@@ -45,6 +47,7 @@ export async function POST(req: Request) {
       const audioBuffer = response.data;
       console.log("Received audio buffer, size:", audioBuffer.length);  // Log the size
       if (audioBuffer.length === 0) {
+        console.error("Error: Empty audio buffer");
         return NextResponse.json({ message: 'Error: Empty audio buffer' }, { status: 500 });
       }
 
@@ -60,22 +63,24 @@ export async function POST(req: Request) {
         ContentType: 'audio/mp3',  // Ensure the correct MIME type
       };
 
+      console.log("Uploading to Sufy with params:", uploadParams);
+
       try {
         const uploadResult = await s3.send(new PutObjectCommand(uploadParams));
         console.log('Upload successful:', uploadResult);
         const fileUrl = `https://${bucketName}.mos.ap-southeast-2.sufybkt.com/${key}`;
         return NextResponse.json({ message: 'Audio uploaded successfully', fileUrl });
-      } catch (uploadError:any) {
+      } catch (uploadError: any) {
         console.error('Error uploading to Sufy:', uploadError);
-        console.error('Error details:', uploadError.message);
         return NextResponse.json({ message: 'Error uploading audio to Sufy', error: uploadError.message }, { status: 500 });
       }
       
     } else {
-      return NextResponse.json({ message: 'Error: No audio data returned from API' }, { status: 500 });
+      console.error("Error: No audio data returned from API, response:", response.data);
+      return NextResponse.json({ message: 'Error: No audio data returned from API', details: response.data }, { status: 500 });
     }
   } catch (error) {
     console.error('Error generating audio:', error);
-    return NextResponse.json({ message: 'Error generating audio' }, { status: 500 });
+    return NextResponse.json({ message: 'Error generating audio', error }, { status: 500 });
   }
 }
