@@ -3,13 +3,14 @@
 import React, { useState } from "react";
 import Header from "./_components/Header";
 import SideNav from "./_components/SideNav";
-import { VideoDataContext } from "../_context/VideoDataContext";
+import { VideoData, VideoDataContext } from "../_context/VideoDataContext";
 
 function DashboardLayout({ children }: { children: React.ReactNode }) {
-    const [videoData, setVideoData] = useState([])
+    const [videoData, setVideoData] = useState<VideoData | null>(null); // Initialize with null or your default value
+
   return (
     <>
-      <VideoDataContext.Provider value={{videoData, setVideoData}}>
+      <VideoDataContext.Provider value={{ videoData, setVideoData }}>
         <div>
           <div className="hidden md:block h-screen bg-white absolute mt-[65px]">
             <SideNav />
